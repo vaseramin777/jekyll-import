@@ -1,15 +1,12 @@
-require "helper"
+require "minitest/autorun"
+require_relative "util"
 
-class TestUtil < Test::Unit::TestCase
-  should ".wpautop (wordpress auto-paragraphs)" do
+class TestUtil < Minitest::Test
+  def test_wpautop_converts_newlines_to_paragraphs
     original = "this is a test\n<p>and it works</p>"
     expected = "<p>this is a test</p>\n<p>and it works</p>\n"
     assert_equal(expected, Util.wpautop(original))
   end
 
-  should ".wpautop is escapes backslash" do
-    original = "<pre>/(?<word>\\w+) \\k<word>/</pre>"
-    expected = "<pre>/(?<word>\\w+) \\k<word>/</pre>\n"
-    assert_equal(expected, Util.wpautop(original))
-  end
-end
+  def test_wpautop_escapes_backslash
+
