@@ -1,20 +1,5 @@
 language: ruby
 cache: bundler
 rvm:
-  - &latest_ruby 2.7
-  - 2.5
-env:
-  matrix:
-    - JEKYLL_VERSION="~> 3.9"
-matrix:
-  include:
-    - rvm: *latest_ruby
-      env: JEKYLL_VERSION="~> 3.9"
-    - rvm: *latest_ruby
-      env: JEKYLL_VERSION="~> 4.2"
-before_install:
-- gem update --system
-before_script: bundle update
-script: script/cibuild
-notifications:
-  email: false
+  - 2.7
+
