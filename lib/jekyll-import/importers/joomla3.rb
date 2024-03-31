@@ -1,4 +1,9 @@
-# frozen_string_literal: false
+# frozen_string_literal: true
+
+require 'sequel'
+require 'mysql2'
+require 'fileutils'
+require 'safe_yaml'
 
 module JekyllImport
   module Importers
@@ -7,68 +12,80 @@ module JekyllImport
         %w(dbname user prefix).each do |option|
           abort "Missing mandatory option --#{option}." if options[option].nil?
         end
+
+        abort "Missing mandatory option --password." if options["password"].nil?
       end
 
       def self.specify_options(c)
-        c.option "dbname",   "--dbname",   "Database name."
-        c.option "user",     "--user",     "Database user name."
-        c.option "password", "--password", "Database user's password. (default: '')"
-        c.option "host",     "--host",     "Database host name. (default: 'localhost')"
-        c.option "port",     "--port",     "Database port. (default: '3306')"
-        c.option "category", "--category", "ID of the category. (default: '0')"
-        c.option "prefix",   "--prefix",   "Table prefix name. (default: 'jos_')"
+        c.option "dbname",   "--dbname",   "The name of the Joomla database."
+        c.option "user",     "--user",     "The username for the Joomla database."
+        c.option "password", "--password", "The password for the Joomla database. (default: '')"
+        c.option "host",     "--host",     "The hostname of the Joomla database. (default: 'localhost')"
+        c.option "port",     "--port",     "The port number of the Joomla database. (default: 3306)"
+        c.option "category", "--category", "The ID of the category to import. (default: 0)"
+        c.option "prefix",   "--prefix",   "The table prefix for the Joomla database. (default: 'jos_')"
       end
 
       def self.require_deps
-        JekyllImport.require_with_fallback(%w(
-          rubygems
-          sequel
-          mysql2
-          fileutils
-          safe_yaml
-        ))
+        # empty
       end
 
       def self.process(options)
         dbname = options.fetch("dbname")
         user   = options.fetch("user")
         pass   = options.fetch("password", "")
-        host   = options.fetch("host", "127.0.0.1")
+        host   = options.fetch("host", "localhost")
         port   = options.fetch("port", 3306).to_i
         cid    = options.fetch("category", 0)
         table_prefix = options.fetch("prefix", "jos_")
 
-        db = Sequel.mysql2(dbname, :user => user, :password => pass, :host => host, :port => port, :encoding => "utf8")
+        db = Sequel.connect("mysql2://#{user}:#{pass}@#{host}:#{port}/#{dbname}?encoding=utf8")
 
         FileUtils.mkdir_p("_posts")
 
-        # Reads a MySQL database via Sequel and creates a post file for each
-        # post in #__content that is published.
-        query = "SELECT `cn`.`title`, `cn`.`alias`, `cn`.`introtext`, CONCAT(`cn`.`introtext`,`cn`.`fulltext`) AS `content`, "
-        query << "`cn`.`created`, `cn`.`id`, `ct`.`title` AS `category`, `u`.`name` AS `author` "
-        query << "FROM `#{table_prefix}content` AS `cn` JOIN `#{table_prefix}categories` AS `ct` ON `cn`.`catid` = `ct`.`id` "
-        query << "JOIN `#{table_prefix}users` AS `u` ON `cn`.`created_by` = `u`.`id` "
-        query << "WHERE (`cn`.`state` = '1' OR `cn`.`state` = '2') " # Only published and archived content items to be imported
+        query = "
+          SELECT 
+            cn.title, 
+            cn.alias, 
+            cn.introtext, 
+            CONCAT(cn.introtext, cn.fulltext) AS content, 
+            cn.created, 
+            cn.id, 
+            ct.title AS category, 
+            u.name AS author 
+          FROM 
+            #{table_prefix}content AS cn 
+            JOIN #{table_prefix}categories AS ct ON cn.catid = ct.id 
+            JOIN #{table_prefix}users AS u ON cn.created_by = u.id 
+          WHERE 
+            (cn.state = '1' OR cn.state = '2')
+        "
 
         query << if cid.positive?
-                   " AND `cn`.`catid` = '#{cid}' "
+                   " AND cn.catid = ? "
                  else
-                   " AND `cn`.`catid` != '2' " # Filter out uncategorized content
+                   " AND cn.catid != '2' "
                  end
 
+        db.bind_values(query, cid)
+
         db[query].each do |post|
-          # Get required fields and construct Jekyll compatible name.
           title = post[:title]
           slug = post[:alias]
           date = post[:created]
           author = post[:author]
           category = post[:category]
-          content = post[:content]
-          excerpt = post[:introtext]
-          name = format("%02d-%02d-%02d-%s.markdown", date.year, date.month, date.day, slug)
+          content = post[:content].chomp
+          excerpt = post[:introtext].chomp
 
-          # Get the relevant fields as a hash, delete empty fields and convert
-          # to YAML for the header.
+          content.gsub!("\n", "<br>")
+          excerpt.gsub!("\n", "<br>")
+
+          name = format(
+            "%04d-%02d-%02d-%s.markdown",
+            date.year, date.month, date.day, slug.gsub(/[^a-z0-9]+/i, "-")
+          )
+
           data = {
             "layout"     => "post",
             "title"      => title.to_s,
@@ -80,7 +97,6 @@ module JekyllImport
             "category"   => category,
           }.delete_if { |_k, v| v.nil? || v == "" }.to_yaml
 
-          # Write out the data and content to file
           File.open("_posts/#{name}", "w") do |f|
             f.puts data
             f.puts "---"
@@ -91,3 +107,4 @@ module JekyllImport
     end
   end
 end
+
