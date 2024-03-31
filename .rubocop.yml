@@ -1,17 +1,18 @@
+# .rubocop.yml
+
 inherit_from: .rubocop_todo.yml
 
-require: rubocop-jekyll
+require:
+  - rubocop-rspec
+  - rubocop-jekyll
+
 inherit_gem:
-  rubocop-jekyll: .rubocop.yml
+  rubocop-jekyll: .rubocop_jekyll.yml
 
 AllCops:
-  TargetRubyVersion: 2.4
+  TargetRubyVersion: 2.7
   Exclude:
     - docs/**/*
     - script/**/*
     - test/**/*
-    - vendor/**/*
-    - Rakefile
-Style/MutableConstant:
-  Exclude:
-    - lib/jekyll-import/importers/typo.rb
+
