@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+require 'nokogiri'
+require 'fileutils'
+require 'safe_yaml'
+
 module JekyllImport
   module Importers
     class Pluxml < Importer
@@ -19,9 +23,7 @@ module JekyllImport
 
       def self.validate(options)
         abort "Missing mandatory option --source." if options["source"].nil?
-        # no layout option, layout by default is post
         options["layout"] = "post" if options["layout"].nil?
-        # no avoid_liquid option, avoid_liquid by default is false
         options["avoid_liquid"] = false if options["avoid_liquid"].nil?
       end
 
@@ -33,35 +35,39 @@ module JekyllImport
         FileUtils.mkdir_p("_posts")
         FileUtils.mkdir_p("_drafts")
 
-        # for each XML file in source location
-        Dir.glob("*.xml", :base => source).each do |df|
+        Dir.glob("*.xml", base: source).each do |df|
           df = File.join(source, df)
           filename = File.basename(df, ".*")
 
-          # prepare post file name in Jekyll format
           a_filename = filename.split(".")
           post_name  = a_filename.pop
           file_date  = a_filename.pop
           post_date  = file_date[0..3] + "-" + file_date[4..5] + "-" + file_date[6..7]
 
-          # if draft, only take post name
-          if filename.split(".")[1].split(",")[0] == "draft"
-            directory = "_drafts"
-            name      = post_name.to_s
-          # if post, post date precede post name
-          else
-            directory = "_posts"
-            name      = "#{post_date}-#{post_name}"
-          end
+          directory = if filename.split(".")[1].split(",")[0] == "draft"
+                        "_drafts"
+                      else
+                        "_posts"
+                      end
 
-          xml = File.open(df) { |f| Nokogiri::XML(f) }
+          name = if directory == "_drafts"
+                   post_name.to_s
+                  else
+                    "#{post_date}-#{post_name}"
+                  end
+
+          xml = File.open(df, encoding: "UTF-8") { |f| Nokogiri::XML(f) }
           raise "There doesn't appear to be any XML items at the source (#{df}) provided." unless xml
 
           doc = xml.xpath("document")
+          raise "Missing title in XML data." unless doc.xpath("title").text.present?
+
           header = {
             "layout" => layout,
             "title"  => doc.xpath("title").text,
             "tags"   => doc.xpath("tags").text.split(", "),
+            "created_at" => post_date,
+            "updated_at" => post_date
           }
           header["render_with_liquid"] = false if avoid_liquid
 
