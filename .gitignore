@@ -1,24 +1,18 @@
+# Ruby-related files and directories
 *.gem
 *.rbc
 .bundle
 .config
-.sass-cache
-coverage
+.sass-cache/
+coverage/
 InstalledFiles
-lib/bundler/man
-vendor/bundle
-pkg
-rdoc
-site/.sass-cache
-spec/reports
-test/tmp
-test/version_tmp
-tmp
+lib/bundler/man/
+vendor/bundle/
+pkg/
+rdoc/
+site/.sass-cache/
+spec/reports/
+test/tmp/
+test/version_tmp/
+tmp/
 
-# YARD artifacts
-.yardoc
-_yardoc
-doc/
-
-.DS_Store
-Gemfile.lock
