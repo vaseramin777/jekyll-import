@@ -13,9 +13,9 @@ module JekyllImport
     # @return string Text which has been converted into correct paragraph tags.
     #
     def self.wpautop(pee, br = true)
-      return "" if pee.strip == ""
+      return "" if pee.nil? || pee.strip == ""
 
-      allblocks = "(?:table|thead|tfoot|caption|col|colgroup|tbody|tr|td|th|div|dl|dd|dt|ul|ol|li|pre|select|option|form|map|area|blockquote|address|math|style|p|h[1-6]|hr|fieldset|noscript|legend|section|article|aside|hgroup|header|footer|nav|figure|figcaption|details|menu|summary)"
+      allblocks = %r{(?:table|thead|tfoot|caption|col|colgroup|tbody|tr|td|th|div|dl|dd|dt|ul|ol|li|pre|select|option|form|map|area|blockquote|address|math|style|p|h[1-6]|hr|fieldset|noscript|legend|section|article|aside|hgroup|header|footer|nav|figure|figcaption|details|menu|summary)}i
       pre_tags = {}
       pee += "\n"
 
@@ -39,9 +39,9 @@ module JekyllImport
         pee += last_pee
       end
 
-      pee = pee.gsub(Regexp.new('<br />\s*<br />'), "\n\n")
-      pee = pee.gsub(Regexp.new("(<" + allblocks + "[^>]*>)"), "\n\\1")
-      pee = pee.gsub(Regexp.new("(</" + allblocks + ">)"), "\\1\n\n")
+      pee = pee.gsub(Regexp.new('<br />\\s*<br />'), "\n\n")
+      pee = pee.gsub(Regexp.new("(<#{allblocks}[^>]*>)"), "\n\\1")
+      pee = pee.gsub(Regexp.new("(</#{allblocks}>)"), "\\1\n\n")
       pee = pee.gsub("\r\n", "\n").tr("\r", "\n")
       if pee.include? "<object"
         pee = pee.gsub(Regexp.new('\s*<param([^>]*)>\s*'), "<param\\1>")
@@ -57,21 +57,4 @@ module JekyllImport
       pee = pee.gsub(Regexp.new("<p>(<li.+?)</p>"), "\\1")
       pee = pee.gsub(Regexp.new("<p><blockquote([^>]*)>", "i"), "<blockquote\\1><p>")
       pee = pee.gsub("</blockquote></p>", "</p></blockquote>")
-      pee = pee.gsub(Regexp.new('<p>\s*(</?' + allblocks + "[^>]*>)"), "\\1")
-      pee = pee.gsub(Regexp.new("(</?" + allblocks + '[^>]*>)\s*</p>'), "\\1")
-      if br
-        pee = pee.gsub(Regexp.new('<(script|style).*?</\1>')) { |match| match.gsub("\n", "<WPPreserveNewline />") }
-        pee = pee.gsub(Regexp.new('(?<!<br />)\s*\n'), "<br />\n")
-        pee = pee.gsub("<WPPreserveNewline />", "\n")
-      end
-      pee = pee.gsub(Regexp.new("(</?" + allblocks + '[^>]*>)\s*<br />'), "\\1")
-      pee = pee.gsub(Regexp.new('<br />(\s*</?(?:p|li|div|dl|dd|dt|th|pre|td|ul|ol)[^>]*>)'), "\\1")
-      pee = pee.gsub(Regexp.new('\n</p>$'), "</p>")
-
-      pre_tags.each do |name, value|
-        pee.gsub!(name, value)
-      end
-      pee
-    end
-  end
-end
+      pee = pee.gsub(Regexp.new('<p>\s*(</?' + allblocks + "[^>]*>
