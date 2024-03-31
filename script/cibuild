@@ -1,7 +1,11 @@
-#!/bin/bash -x
+#!/bin/bash
 
-echo -e "\nRunning Unit Tests..."
-bundle exec rake test
+# Run Unit Tests
+echo -e "\nRunning Unit Tests...\n"
+bundle exec rake test || { echo "Unit tests failed. Exiting..."; exit 1; }
 
-echo -e "\nChecking Code Style..."
-script/fmt
+# Check Code Style
+echo -e "\nChecking Code Style...\n"
+./script/fmt || { echo "Code style check failed. Exiting..."; exit 1; }
+
+echo -e "\nCode Quality Checks Passed.\n"
