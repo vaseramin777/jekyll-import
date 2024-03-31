@@ -1,4 +1,10 @@
+# This is a .gitignore file for a Hugo website
+
+# Directories
 _site/
-*.swp
 pkg/
 test/
+
+# Hidden files
+*.swp
+
