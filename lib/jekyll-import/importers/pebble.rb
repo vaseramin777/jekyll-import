@@ -1,14 +1,21 @@
-module JekyllImport
+require 'nokogiri'
+require 'safe_yaml'
+
+module Jekyll
   module Importers
     class Pebble < Importer
       def self.require_deps
-        JekyllImport.require_with_fallback(%w(
-          nokogiri
-          safe_yaml
-        ))
+        begin
+          require 'nokogiri'
+          require 'safe_yaml'
+        rescue LoadError => e
+          puts "Error requiring dependencies: #{e.message}"
+          exit 1
+        end
       end
 
-      def self.specify_options(c) 
+      def self.specify_options(c)
+        super
         c.option "directory", "--directory PATH", "Pebble source directory"
       end
 
@@ -22,7 +29,11 @@ module JekyllImport
 
         traverse_posts_within(options[:directory]) do |file|
           next if file.end_with?('categories.xml')
-          process_file(file)
+          begin
+            process_file(file)
+          rescue StandardError => e
+            Jekyll.logger.error "Error processing file #{file}: #{e.message}"
+          end
         end
       end
 
@@ -41,12 +52,12 @@ module JekyllImport
       end
 
       def self.process_file(file)
-        xml = File.open(file) { |f| Nokogiri::XML(f) }
+        xml = Nokogiri::XML(File.read(file), nil, encoding: 'UTF-8')
         raise "There doesn't appear to be any XML items at the source (#{file}) provided." unless xml
 
         doc = xml.xpath("blogEntry")
 
-        title = kebabize(doc.xpath('title').text).gsub('_', '-')
+        title = slugify(doc.xpath('title').text)
         date = Date.parse(doc.xpath('date').text)
 
         directory = "_posts"
@@ -64,33 +75,19 @@ module JekyllImport
         File.open(path, "w") do |f|
           f.puts header.to_yaml
           f.puts "---\n\n"
-          f.puts doc.xpath("body").text
+          f.puts strip_tags(doc.xpath("body").text)
         end
 
         Jekyll.logger.info "Wrote file #{path} successfully!"
       end
 
-      def self.kebabize(string)
-        kebab = '-'.freeze
-        string.gsub!(/[^\w\-_]+/, kebab)
+      def self.slugify(string)
+        string = string.gsub(/[^\w\s-]/, '').gsub(/[-\s]+/, '-').strip.downcase
+      end
 
-        unless kebab.nil? || kebab.empty?
-          if kebab == "-".freeze
-            re_duplicate_kebab        = /-{2,}/
-            re_leading_trailing_kebab = /^-|-$/
-          else
-            re_sep = Regexp.escape(kebab)
-            re_duplicate_kebab        = /#{re_sep}{2,}/
-            re_leading_trailing_kebab = /^#{re_sep}|#{re_sep}$/
-          end
-          # No more than one of the kebab in a row.
-          string.gsub!(re_duplicate_kebab, kebab)
-          # Remove leading/trailing kebab.
-          string.gsub!(re_leading_trailing_kebab, "".freeze)
-        end
-
-        string.downcase!
-        string
+      def self.strip_tags(html)
+        doc = Nokogiri::HTML(html)
+        doc.text
       end
     end
   end
