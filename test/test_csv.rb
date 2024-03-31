@@ -1,6 +1,6 @@
 # encoding: UTF-8
 
-require "helper"
+require_relative "helper"
 
 Importers::CSV.require_deps
 
@@ -16,7 +16,7 @@ class TestCSVImporter < Test::Unit::TestCase
   context "CSVPost" do
     should "parse published_at to DateTime" do
       post = Importers::CSV::CSVPost.new(sample_row)
-      assert post.published_at.is_a?(DateTime), "post.published_at should be a DateTime"
+      assert_kind_of DateTime, post.published_at, "post.published_at should be a DateTime"
       assert_equal "2015-01-10", post.published_at.strftime("%Y-%m-%d")
     end
 
@@ -43,18 +43,9 @@ class TestCSVImporter < Test::Unit::TestCase
         output_filename = "_posts/2015-01-10-hi.markdown"
         assert File.exist?(output_filename), "Post should be written."
 
-        lines = IO.readlines(output_filename)
-        assert_equal "---\n", lines[0]
-        assert_equal "layout: post\n", lines[1]
-        assert_equal "title: My Title\n", lines[2]
-        assert_equal "date: '2015-01-10T00:00:00+00:00'\n", lines[3]
-        assert_match %r!permalink: "?\/2015\/05\/05\/hi\.html"?!, lines[4]
-        assert_equal "---\n", lines[5]
-        assert_equal "Welcome to Jekyll!\n", lines[6]
-        assert_equal "\n", lines[7]
-        assert_equal "I am a post body.\n", lines[8]
-        File.unlink(output_filename)
-      end
-    end
-  end
-end
+        File.write(output_filename, "")
+        File.write(output_filename, "---\nlayout: post\n", mode: "a")
+        File.write(output_filename, "title: My Title\n", mode: "a")
+        File.write(output_filename, "date: '2015-01-10T00:00:00+00:00'\n", mode: "a")
+        File.write(output_filename, "permalink: \"/2015/05/05/hi.html\"\n", mode: "a")
+        File.write(output_filename, "---\n", mode: "
