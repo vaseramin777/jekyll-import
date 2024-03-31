@@ -1,20 +1,16 @@
 # frozen_string_literal: true
 
+require 'sequel'
+require 'mysql2'
+require 'fileutils'
+require 'safe_yaml'
+require 'erb'
+require 'active_support/inflector'
+
 module JekyllImport
   module Importers
     class TextPattern < Importer
-      # Reads a MySQL database via Sequel and creates a post file for each post.
-      # The only posts selected are those with a status of 4 or 5, which means
-      # "live" and "sticky" respectively.
-      # Other statuses are 1 => draft, 2 => hidden and 3 => pending.
-      QUERY = "SELECT Title, \
-                      url_title, \
-                      Posted, \
-                      Body, \
-                      Keywords \
-               FROM textpattern \
-               WHERE Status = '4' OR \
-                     Status = '5'"
+      QUERY = "SELECT Title, url_title, Posted, Body, Keywords FROM textpattern WHERE Status = ? OR Status = ?"
 
       def self.require_deps
         JekyllImport.require_with_fallback(%w(
@@ -33,41 +29,60 @@ module JekyllImport
         c.option "host",     "--host HOST",   "Database host name. (default: 'localhost')"
       end
 
+      def self.connect(dbname, user, password, host)
+        Sequel.connect("mysql2://#{user}:#{password}@#{host}/#{dbname}?encoding=utf8")
+      end
+
+      def self.import_posts(db, output_dir)
+        FileUtils.mkdir_p output_dir
+
+        db.prepare(QUERY, ['4', '5']).each do |post|
+          import_post(post, output_dir)
+        end
+      end
+
+      def self.import_post(post, output_dir)
+        title = post[:Title]
+        slug = slugify(title)
+        date = post[:Posted]
+        content = post[:Body]
+
+        name = [date.strftime("%Y-%m-%d"), slug].join("-") + ".textile"
+
+        data = {
+          "layout" => "post",
+          "title"  => title.to_s,
+          "tags"   => post[:Keywords].split(","),
+        }.delete_if { |_k, v| v.nil? || v == "" }
+
+        template = ERB.new("---
+#{data.to_yaml}
+---
+#{content}
+")
+
+        File.write("#{output_dir}/#{name}", template.result)
+      end
+
+      def self.slugify(title)
+        title.downcase.gsub(/[^a-z0-9]+/, '-')
+      end
+
       def self.process(options)
         dbname = options.fetch("dbname")
         user   = options.fetch("user")
         pass   = options.fetch("password", "")
         host   = options.fetch("host", "127.0.0.1")
 
-        db = Sequel.mysql2(dbname, :user => user, :password => pass, :host => host, :encoding => "utf8")
-
-        FileUtils.mkdir_p "_posts"
-
-        db[QUERY].each do |post|
-          # Get required fields and construct Jekyll compatible name.
-          title = post[:Title]
-          slug = post[:url_title]
-          date = post[:Posted]
-          content = post[:Body]
-
-          name = [date.strftime("%Y-%m-%d"), slug].join("-") + ".textile"
-
-          # Get the relevant fields as a hash, delete empty fields and convert
-          # to YAML for the header.
-          data = {
-            "layout" => "post",
-            "title"  => title.to_s,
-            "tags"   => post[:Keywords].split(","),
-          }.delete_if { |_k, v| v.nil? || v == "" }.to_yaml
-
-          # Write out the data and content to file.
-          File.open("_posts/#{name}", "w") do |f|
-            f.puts data
-            f.puts "---"
-            f.puts content
-          end
+        begin
+          db = connect(dbname, user, pass, host)
+          import_posts(db, "_posts")
+        rescue StandardError => e
+          puts "Error: #{e.message}"
+          exit(1)
         end
       end
     end
   end
 end
+
