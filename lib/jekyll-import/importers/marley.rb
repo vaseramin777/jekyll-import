@@ -1,5 +1,10 @@
 # frozen_string_literal: true
 
+require 'fileutils'
+require 'pathname'
+require 'safe_yaml'
+require 'date'
+
 module JekyllImport
   module Importers
     class Marley < Importer
@@ -37,31 +42,26 @@ module JekyllImport
         FileUtils.mkdir_p "_posts"
 
         posts = 0
-        Dir["#{marley_data_dir}/**/*.txt"].each do |f|
-          next unless File.exist?(f)
+        Dir[Pathname.new(marley_data_dir) + "**/*.txt"].each do |f|
+          next unless f.file?
 
-          # copied over from marley's app/lib/post.rb
-          file_content  = File.read(f)
+          file_content  = f.read
           meta_content  = file_content.slice!(regexp[:meta])
           body          = file_content.sub(regexp[:title], "").sub(regexp[:perex], "").strip
 
           title = file_content.scan(regexp[:title]).first.to_s.strip
           prerex = file_content.scan(regexp[:perex]).first.to_s.strip
-          published_on = DateTime.parse(post[:published_on]) rescue File.mtime(File.dirname(f))
-          meta = meta_content ? YAML.safe_load(meta_content.scan(regexp[:meta]).to_s) : {}
+          published_on = DateTime.parse(file_content.scan(regexp[:published_on]).first) rescue f.mtime
+          meta = meta_content ? SafeYAML.safe_load(meta_content.scan(regexp[:meta]).to_s) : {}
           meta["title"] = title
           meta["layout"] = "post"
 
           formatted_date = published_on.strftime("%Y-%m-%d")
-          post_name = File.dirname(f).split(%r!/!).last.gsub(%r!\A\d+-!, "")
+          post_name = f.relative_path.to_s.split(%r!/!).last.gsub(%r!\A\d+-!, "")
 
           name = "#{formatted_date}-#{post_name}"
-          File.open("_posts/#{name}.markdown", "w") do |post|
-            post.puts meta.to_yaml
-            post.puts "---\n"
-            post.puts "\n#{prerex}\n\n" if prerex
-            post.puts body
-          end
+          post_path = "_posts/#{name}.markdown"
+          File.write(post_path, meta.to_yaml + "---\n\n" + (prerex + "\n\n") + body)
           posts += 1
         end
         "Created #{posts} posts!"
@@ -69,3 +69,4 @@ module JekyllImport
     end
   end
 end
+
