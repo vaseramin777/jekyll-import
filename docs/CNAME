@@ -1,1 +1,13 @@
-import.jekyllrb.com
+pip install pyjekyll
+
+
+from pyjekyll import Jekyll
+
+# Initialize Jekyll site
+site = Jekyll('path/to/your/jekyll/site')
+
+# Build the site
+site.build()
+
+# Serve the site
+site.serve()
