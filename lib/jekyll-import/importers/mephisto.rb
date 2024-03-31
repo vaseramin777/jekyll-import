@@ -1,74 +1,68 @@
 # frozen_string_literal: true
 
+require 'sequel'
+require 'csv'
+require 'fileutils'
+
 module JekyllImport
   module Importers
-    class Mephisto < Importer
-      # Accepts a hash with database config variables, exports mephisto posts into a csv
-      # export PGPASSWORD if you must
-      def self.postgres(c)
-        sql = <<~SQL
-          BEGIN;
-          CREATE TEMP TABLE jekyll AS
-            SELECT title, permalink, body, published_at, filter FROM contents
-            WHERE user_id = 1 AND type = 'Article' ORDER BY published_at;
-          COPY jekyll TO STDOUT WITH CSV HEADER;
-          ROLLBACK;
-        SQL
-        command = %(psql -h #{c[:host] || "127.0.0.1"} -c "#{sql.strip}" #{c[:database]} #{c[:username]} -o #{c[:filename] || "posts.csv"})
-        Jekyll.logger.info "Executing:", command
-        `#{command}`
-        CSV.process
+    class Mephisto
+      # Connects to a MySQL database using Sequel
+      def self.connect(db_config)
+        Sequel.mysql2(db_config.fetch('database'),
+                       user: db_config['user'],
+                       password: db_config['password'],
+                       host: db_config['host'],
+                       encoding: 'utf8')
       end
 
-      def self.validate(options)
-        %w(dbname user).each do |option|
-          abort "Missing mandatory option --#{option}." if options[option].nil?
+      # Exports posts from a MySQL database to a CSV file
+      def self.export_to_csv(db_config, csv_file)
+        db = connect(db_config)
+
+        sql = <<~SQL
+          SELECT title, permalink, body, published_at, filter
+          FROM contents
+          WHERE user_id = 1 AND type = 'Article'
+          ORDER BY published_at
+        SQL
+
+        CSV.open(csv_file, 'w') do |csv|
+          db.fetch(sql) do |row|
+            csv << row.values
+          end
         end
       end
 
-      def self.require_deps
-        JekyllImport.require_with_fallback(%w(
-          rubygems
-          sequel
-          mysql2
-          csv
-          fileutils
-        ))
+      # Imports posts from a CSV file into a Jekyll site
+      def self.import_from_csv(csv_file)
+        FileUtils.mkdir_p '_posts'
+
+        CSV.foreach(csv_file, headers: true) do |row|
+          title = row['title']
+          slug = row['permalink']
+          date = Date.parse(row['published_at'])
+          content = row['body']
+
+          name = [date.year, date.month, date.day, slug].join("-") + ".markdown"
+
+          data = {
+            "layout" => "post",
+            "title"  => title,
+            "mt_id"  => row['filter'],
+          }.delete_if { |_k, v| v.nil? || v == "" }.to_yaml
+
+          File.open("_posts/#{name}", "w") do |f|
+            f.puts data
+            f.puts "---"
+            f.puts content
+          end
+        end
       end
 
-      def self.specify_options(c)
-        c.option "dbname",   "--dbname DB",   "Database name"
-        c.option "user",     "--user USER",   "Database user name"
-        c.option "password", "--password PW", "Database user's password (default: '')"
-        c.option "host",     "--host HOST",   "Database host name (default: 'localhost')"
-      end
-
-      # This query will pull blog posts from all entries across all blogs. If
-      # you've got unpublished, deleted or otherwise hidden posts please sift
-      # through the created posts to make sure nothing is accidently published.
-      QUERY = "SELECT id, \
-                      permalink, \
-                      body, \
-                      published_at, \
-                      title \
-               FROM contents \
-               WHERE user_id = 1 AND \
-                     type = 'Article' AND \
-                     published_at IS NOT NULL \
-               ORDER BY published_at"
-
-      def self.process(options)
-        dbname = options.fetch("dbname")
-        user   = options.fetch("user")
-        pass   = options.fetch("password", "")
-        host   = options.fetch("host", "127.0.0.1")
-
-        db = Sequel.mysql2(dbname, :user     => user,
-                                   :password => pass,
-                                   :host     => host,
-                                   :encoding => "utf8")
-
-        FileUtils.mkdir_p "_posts"
+      # Imports posts from a MySQL database into a Jekyll site
+      def self.import_from_db(db_config)
+        db = connect(db_config)
 
         db[QUERY].each do |post|
           title = post[:title]
@@ -76,14 +70,11 @@ module JekyllImport
           date = post[:published_at]
           content = post[:body]
 
-          # Ideally, this script would determine the post format (markdown,
-          # html, etc) and create files with proper extensions. At this point
-          # it just assumes that markdown will be acceptable.
           name = [date.year, date.month, date.day, slug].join("-") + ".markdown"
 
           data = {
             "layout" => "post",
-            "title"  => title.to_s,
+            "title"  => title,
             "mt_id"  => post[:entry_id],
           }.delete_if { |_k, v| v.nil? || v == "" }.to_yaml
 
@@ -94,6 +85,44 @@ module JekyllImport
           end
         end
       end
+
+      # Query to pull blog posts from all entries across all blogs
+      QUERY = "SELECT id,
+                      permalink,
+                      body,
+                      published_at,
+                      title,
+                      entry_id
+               FROM contents
+               WHERE user_id = 1 AND
+                     type = 'Article' AND
+                     published_at IS NOT NULL
+               ORDER BY published_at"
+
+      def self.validate(options)
+        %w(dbname user).each do |option|
+          abort "Missing mandatory option --#{option}." if options[option].nil?
+        end
+      end
+
+      def self.require_deps
+        JekyllImport.require_with_fallback(%w(
+          sequel
+          mysql2
+          csv
+          fileutils
+        ))
+      rescue LoadError => e
+        abort "Missing dependency: #{e.name}"
+      end
+
+      def self.specify_options(c)
+        c.option "dbname",   "--dbname DB",   "Database name"
+        c.option "user",     "--user USER",   "Database user name"
+        c.option "password", "--password PW", "Database user's password (default: '')"
+        c.option "host",     "--host HOST",   "Database host name (default: 'localhost')"
+      end
     end
   end
 end
+
