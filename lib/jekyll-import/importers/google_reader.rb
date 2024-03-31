@@ -23,42 +23,43 @@ module JekyllImport
         ))
       end
 
-      # Process the import.
-      #
-      # source - a URL or a local file String.
-      #
-      # Returns nothing.
       def self.process(options)
         source = options.fetch("source")
 
-        URI.parse(source).open do |content|
-          feed = RSS::Parser.parse(content)
-
-          raise "There doesn't appear to be any RSS items at the source (#{source}) provided." unless feed
-
-          feed.items.each do |item|
-            title = item.title.content.to_s
-            formatted_date = Date.parse(item.published.to_s)
-            post_name = title.split(%r{ |!|/|:|&|-|$|,}).map do |i|
-              i.downcase if i != ""
-            end.compact.join("-")
-            name = "#{formatted_date}-#{post_name}"
-
-            header = {
-              "layout" => "post",
-              "title"  => title,
-            }
-
-            FileUtils.mkdir_p("_posts")
-
-            File.open("_posts/#{name}.html", "w") do |f|
-              f.puts header.to_yaml
-              f.puts "---\n\n"
-              f.puts item.content.content.to_s
-            end
-          end
+        begin
+          content = open(source)
+        rescue StandardError => e
+          warn "[JekyllImport] Error opening source (#{source}): #{e}"
+          return
         end
+
+        return if !File.exist?(source) || !File.readable?(source)
+
+        feed = RSS::Parser.parse(content)
+
+        raise "There doesn't appear to be any RSS items at the source (#{source}) provided." unless feed
+
+        count = 0
+        feed.items.each do |item|
+          title = item.title.content.to_s
+          next if title.empty?
+
+          formatted_date = Date.parse(item.published.to_s)
+          next if formatted_date.nil?
+
+          post_name = normalize_post_name(title, formatted_date)
+          next if post_name.empty?
+
+          write_post(post_name, title, item.content.content.to_s)
+          count += 1
+        end
+
+        puts "[JekyllImport] Imported #{count} posts." if count > 0
       end
-    end
-  end
-end
+
+      private
+
+      def self.normalize_post_name(title, formatted_date)
+        post_name = title.downcase.gsub(/[^a-z0-9]+/, "-")
+        post_name = "#{formatted_date}-#{post_name}"
+        post_name.gsub(/-
