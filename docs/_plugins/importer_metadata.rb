@@ -5,7 +5,7 @@ require "mercenary"
 
 module JekyllImport
   def self.require_with_fallback(gems)
-    Array(gems).flatten
+    Array(gems)
   end
 
   class Bridge
@@ -28,8 +28,6 @@ module JekyllImport
     end
 
     private
-
-    attr_reader :name
 
     # Gems assumed to be available either via Ruby Stdlib or prior installation.
     STDLIB = %w(csv date fileutils json net/http open-uri rss rubygems time uri yaml jekyll).freeze
@@ -56,7 +54,7 @@ module JekyllImport
           else
             hsh["desc"] = o.description
           end
-          hsh.tap(&:compact!)
+          hsh.compact!
         end
       end
     end
