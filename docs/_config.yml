@@ -1,4 +1,5 @@
-title: "jekyll-import • Import your old &amp; busted site to Jekyll"
+---
+title: "jekyll-import: Import your old & busted site to Jekyll"
 url: https://import.jekyllrb.com
 highlighter: rouge
 relative_permalinks: false
@@ -10,19 +11,8 @@ latest_release: 0.14.0
 collections:
   docs:
     output: true
+    permalink: /docs/:path/
   importers:
     output: true
-    permalink: /docs/:path/
+    permalink: /importers/:path/
 
-defaults:
-  - scope:
-      type: docs
-    values:
-      layout: docs
-  - scope:
-      type: importers
-    values:
-      layout: importer
-
-sass:
-   style: compressed
