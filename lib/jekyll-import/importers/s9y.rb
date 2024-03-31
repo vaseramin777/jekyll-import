@@ -1,59 +1,73 @@
 # frozen_string_literal: true
 
+require 'open-uri'
+require 'rss'
+require 'fileutils'
+require 'safe_yaml'
+
 module JekyllImport
   module Importers
     class S9Y < Importer
       def self.specify_options(c)
-        c.option "source", "--source SOURCE", "The URL of the S9Y RSS feed"
+        c.option "source", "--source SOURCE", "The URL of the S9Y RSS feed", required: true
       end
 
       def self.validate(options)
-        abort "Missing mandatory option --source, e.g. --source \"http://blog.example.com/rss.php?version=2.0&all=1\"" if options["source"].nil?
+        begin
+          uri = URI.parse(options["source"])
+          raise ArgumentError, "Invalid URL" unless uri.scheme.in?(%w[http https])
+        rescue URI::InvalidURIError
+          abort "Invalid URL format. Please provide a valid URL in the format 'http(s)://example.com'."
+        end
       end
 
-      def self.require_deps
-        JekyllImport.require_with_fallback(%w(
-          open-uri
-          rss
-          fileutils
-          safe_yaml
-        ))
-      end
+      def self.require_deps; end
 
       def self.process(options)
         source = options.fetch("source")
 
         FileUtils.mkdir_p("_posts")
 
-        text = ""
-        URI.parse(source).open { |line| text = line.read }
+        begin
+          text = URI.open(source).read
+        rescue StandardError => e
+          abort "Error opening URL: #{e}"
+        end
+
         rss = ::RSS::Parser.parse(text)
 
         rss.items.each do |item|
-          post_url = item.link.match(".*(/archives/.*)")[1]
-          categories = item.categories.collect(&:content)
-          content = item.content_encoded.strip
-          date = item.date
-          slug = item.link.match('.*/archives/[0-9]+-(.*)\.html')[1]
-          name = format("%02d-%02d-%02d-%s.markdown", date.year, date.month, date.day, slug)
+          begin
+            post_url = extract_post_url(item.link)
+            categories = extract_categories(item.categories)
+            content = extract_content(item.content_encoded)
+            date = extract_date(item.date)
+            slug = extract_slug(item.link)
+            name = format_post_name(date, slug)
 
-          data = {
-            "layout"     => "post",
-            "title"      => item.title,
-            "categories" => categories,
-            "permalink"  => post_url,
-            "s9y_link"   => item.link,
-            "date"       => item.date,
-          }.delete_if { |_k, v| v.nil? || v == "" }.to_yaml
+            data = {
+              "layout"     => "post",
+              "title"      => item.title,
+              "categories" => categories,
+              "permalink"  => post_url,
+              "s9y_link"   => item.link,
+              "date"       => item.date,
+            }.delete_if { |_k, v| v.nil? || v == "" }.to_yaml
 
-          # Write out the data and content to file
-          File.open("_posts/#{name}", "w") do |f|
-            f.puts data
-            f.puts "---"
-            f.puts content
+            # Write out the data and content to file
+            begin
+              File.open("_posts/#{name}", "w") do |f|
+                f.puts data
+                f.puts "---"
+                f.puts content
+              end
+            rescue StandardError => e
+              abort "Error writing file: #{e}"
+            end
+          rescue StandardError => e
+            abort "Error processing item: #{e}"
           end
         end
       end
-    end
-  end
-end
+
+     
