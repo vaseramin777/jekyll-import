@@ -1,10 +1,21 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 
-export DOCS_DEPLOY=true
-buildopts="-s docs -d docs/_site"
+# Use lowercase variable names to avoid potential conflicts with environment variables
+docs_deploy=false
+build_opts="-s docs -d docs/_site"
 
+# Check if the user provided any arguments
 if [[ $# -lt 1 ]]; then
-  bundle exec jekyll build $buildopts
+  # If no arguments are provided, set the docs_deploy variable to true
+  docs_deploy=true
 else
-  bundle exec jekyll "$@" $buildopts
+  # If arguments are provided, use them instead of setting docs_deploy to true
+  build_opts="$build_opts $@"
+fi
+
+# Use braces to expand variables and avoid issues with word splitting
+if ${docs_deploy}; then
+  bundle exec jekyll build ${build_opts}
+else
+  bundle exec jekyll ${build_opts}
 fi
