@@ -1,18 +1,22 @@
-# frozen_string_literal: true
+#!/usr/bin/env ruby
 
 # For use/testing when no gem is installed
-$LOAD_PATH.unshift __dir__
+$LOAD_PATH.unshift File.expand_path('../', __FILE__)
 
-require "rubygems"
-require "jekyll"
-require "jekyll/commands/import"
-require "colorator"
+require_relative 'jekyll'
+require_relative 'mercenary'
+require_relative 'colorator'
 
-require "jekyll-import/importer"
-require "jekyll-import/importers"
-require "jekyll-import/util"
+require 'jekyll-import'
 
 module JekyllImport
+  def self.run(args)
+    cmd = Mercenary::Command.new(doc: "Import posts from various sources.") do
+      add_importer_commands(self)
+    end
+    cmd.parse!(args)
+  end
+
   # Public: Add the subcommands for each importer
   #
   # cmd - the instance of Mercenary::Command from the
@@ -27,27 +31,19 @@ module JekyllImport
         c.syntax "#{name} [options]"
         importer.specify_options(c)
         c.action do |_, options|
-          importer.run(options)
+          begin
+            importer.run(options)
+          rescue LoadError => e
+            puts "Whoops! Looks like you need to install '#{e.name}' before you can use this importer.".red
+            puts ""
+            puts "If you're using bundler:"
+            puts "  1. Add 'gem \"#{e.name}\"' to your Gemfile"
+            puts "  2. Run 'bundle install'"
+            puts ""
+            puts "If you're not using bundler:"
+            puts "  1. Run 'gem install #{e.name}'."
+            exit(1)
+          end
         end
       end
-    end
-    commands
-  end
-
-  def self.require_with_fallback(gems)
-    Array[gems].flatten.each do |gem|
-      begin
-        require gem
-      rescue LoadError
-        Jekyll.logger.error "Whoops! Looks like you need to install '#{gem}' before you can use this importer."
-        Jekyll.logger.error ""
-        Jekyll.logger.error "If you're using bundler:"
-        Jekyll.logger.error "  1. Add 'gem \"#{gem}\"' to your Gemfile"
-        Jekyll.logger.error "  2. Run 'bundle install'"
-        Jekyll.logger.error ""
-        Jekyll.logger.error "If you're not using bundler:"
-        Jekyll.logger.abort_with "  1. Run 'gem install #{gem}'."
-      end
-    end
-  end
-end
+   
