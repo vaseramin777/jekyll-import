@@ -3,6 +3,7 @@
 module JekyllImport
   module Importers
     class RSS < Importer
+      # Specify options for the RSS importer
       def self.specify_options(c)
         c.option "source",         "--source NAME",      "The RSS file or URL to import."
         c.option "tag",            "--tag NAME",         "Add a specific tag to all posts."
@@ -11,11 +12,21 @@ module JekyllImport
         c.option "canonical_link", "--canonical_link",   "Add original link as `canonical_url` to post front matter. (default: false)"
       end
 
+      # Validate options provided by the user
       def self.validate(options)
-        abort "Missing mandatory option --source." if options["source"].nil?
-        abort "Provide either --tag or --extract_tags option." if options["extract_tags"] && options["tag"]
+        required_options = %i[source]
+        missing_options = required_options.select { |option| options[option].nil? }
+
+        if missing_options.any?
+          abort "Missing mandatory options: #{missing_options.join(', ')}."
+        end
+
+        if options["extract_tags"] && options["tag"]
+          abort "Provide either --tag or --extract_tags option, but not both."
+        end
       end
 
+      # Require dependencies for the RSS importer
       def self.require_deps
         JekyllImport.require_with_fallback(%w(
           rss
@@ -27,12 +38,11 @@ module JekyllImport
         ))
       end
 
-      # Process the import.
-      #
-      # source - a URL or a local file String.
-      #
-      # Returns nothing.
+      # Process the import
       def self.process(options)
+        self.require_deps
+        self.validate(options)
+
         source = options.fetch("source")
 
         content = ""
@@ -46,6 +56,7 @@ module JekyllImport
         end
       end
 
+      # Write an RSS item to a file
       def self.write_rss_item(item, options)
         frontmatter = options.fetch("frontmatter", [])
         body = options.fetch("body", ["description"])
@@ -71,7 +82,8 @@ module JekyllImport
         output = +""
 
         body.each do |row|
-          output << item.send(row).to_s
+          content = item.send(row)
+          output << content.to_s unless content.nil?
         end
 
         output.strip!
@@ -96,6 +108,7 @@ module JekyllImport
         end
       end
 
+      # Extract tags from an RSS item
       def self.get_tags(item, options)
         explicit_tag = options["tag"]
         return explicit_tag unless explicit_tag.nil? || explicit_tag.empty?
