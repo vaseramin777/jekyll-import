@@ -2,11 +2,11 @@
 
 module JekyllImport
   module Importers
-    Dir.chdir(File.expand_path(File.join("importers"), __dir__)) do
-      Dir.entries(".").each do |f|
-        next if f[0..0].eql?(".")
-
-        require "jekyll-import/importers/#{f}"
+    Dir.chdir(File.join(File.dirname(__FILE__), 'importers')) do
+      Dir.glob('**/*.rb').each do |file|
+        require file
+        constant = File.basename(file, '.rb').camelize.constantize
+        Object.const_set("JekyllImport::Importers::#{constant.name}", constant)
       end
     end
   end
