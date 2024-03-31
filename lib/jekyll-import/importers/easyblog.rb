@@ -3,12 +3,14 @@
 module JekyllImport
   module Importers
     class Easyblog < Importer
+      # Validate mandatory options
       def self.validate(options)
         %w(dbname user).each do |option|
           abort "Missing mandatory option --#{option}." if options[option].nil?
         end
       end
 
+      # Specify options and their descriptions
       def self.specify_options(c)
         c.option "dbname",   "--dbname",   "Database name."
         c.option "user",     "--user",     "Database user name."
@@ -18,16 +20,22 @@ module JekyllImport
         c.option "prefix",   "--prefix",   "Table prefix name. (default: 'jos_')"
       end
 
+      # Require dependencies and handle exceptions
       def self.require_deps
-        JekyllImport.require_with_fallback(%w(
-          rubygems
-          sequel
-          mysql2
-          fileutils
-          safe_yaml
-        ))
+        begin
+          JekyllImport.require_with_fallback(%w(
+            rubygems
+            sequel
+            mysql2
+            fileutils
+            safe_yaml
+          ))
+        rescue LoadError => e
+          abort "Failed to load required dependencies. Error: #{e}"
+        end
       end
 
+      # Process options and import data
       def self.process(options)
         dbname  = options.fetch("dbname")
         user    = options.fetch("user")
@@ -36,13 +44,23 @@ module JekyllImport
         section = options.fetch("section", "1")
         table_prefix = options.fetch("prefix", "jos_")
 
-        db = Sequel.mysql2(dbname, :user => user, :password => pass, :host => host, :encoding => "utf8")
+        begin
+          # Connect to the MySQL database
+          db = Sequel.mysql2(dbname, :user => user, :password => pass, :host => host, :encoding => "utf8")
 
+          # Import data
+          import_data(db, table_prefix, section)
+
+          # Close the database connection
+          db.disconnect
+        rescue Sequel::DatabaseConnectionError => e
+          abort "Failed to connect to the database. Error: #{e}"
+        end
+      end
+
+      # Import data from the MySQL database
+      def self.import_data(db, table_prefix, section)
         FileUtils.mkdir_p("_posts")
-
-        # Reads a MySQL database via Sequel and creates a post file for each
-        # post in wp_posts that has post_status = 'publish'. This restriction is
-        # made because 'draft' posts are not guaranteed to have valid dates.
 
         query = "
         select
@@ -69,7 +87,7 @@ module JekyllImport
           content = post[:content]
           category = post[:category]
           tags = post[:tags]
-          name = format("%02d-%02d-%02d-%s.markdown", date.year, date.month, date.day, slug)
+          name = format("%02d-%02d-%02d-%s.markdown", date.year, date.month, date.day, slug.gsub(/[^a-z0-9]+/i, '-').downcase)
 
           # Get the relevant fields as a hash, delete empty fields and convert
           # to YAML for the header.
@@ -81,16 +99,18 @@ module JekyllImport
             "category"   => post[:category],
             "tags"       => post[:tags],
             "date"       => date,
-          }.delete_if { |_k, v| v.nil? || v == "" }.to_yaml
+          }.delete_if { |_k, v| v.nil? || v == "" }
 
-          # Write out the data and content to file
+          # Encode the content in UTF-8 and write out the data and content to file
+          encoded_content = content.encode!('utf-8', 'binary', invalid: :replace, undef: :replace, replace: '?’)
           File.open("_posts/#{name}", "w") do |f|
-            f.puts data
+            f.puts data.to_yaml(strip_whitespace: true)
             f.puts "---"
-            f.puts content
+            f.puts encoded_content
           end
         end
       end
     end
   end
 end
+
