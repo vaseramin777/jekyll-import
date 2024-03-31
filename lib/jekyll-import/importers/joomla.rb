@@ -1,11 +1,21 @@
 # frozen_string_literal: true
 
+require "sequel"
+require "mysql2"
+require "fileutils"
+require "safe_yaml"
+
 module JekyllImport
   module Importers
     class Joomla < Importer
       def self.validate(options)
         %w(dbname user).each do |option|
           abort "Missing mandatory option --#{option}." if options[option].nil?
+        end
+
+        %w(section prefix).each do |option|
+          abort "Missing mandatory option --#{option}." if options[option].nil?
+          abort "Invalid option --#{option}: expected an integer." unless options[option].is_a?(Integer)
         end
       end
 
@@ -20,13 +30,11 @@ module JekyllImport
       end
 
       def self.require_deps
-        JekyllImport.require_with_fallback(%w(
-          rubygems
-          sequel
-          mysql2
-          fileutils
-          safe_yaml
-        ))
+        require "rubygems"
+        require "sequel"
+        require "mysql2"
+        require "fileutils"
+        require "safe_yaml"
       end
 
       def self.process(options)
@@ -35,37 +43,29 @@ module JekyllImport
         pass    = options.fetch("password", "")
         host    = options.fetch("host", "127.0.0.1")
         port    = options.fetch("port", 3306).to_i
-        section = options.fetch("section", "1")
-        table_prefix = options.fetch("prefix", "jos_")
+        section = options.fetch("section", "1").to_i
+        prefix  = options.fetch("prefix", "jos_")
 
-        db = Sequel.mysql2(dbname, :user => user, :password => pass, :host => host, :port => port, :encoding => "utf8")
+        db = Sequel.connect("mysql2://#{user}:#{pass}@#{host}:#{port}/#{dbname}?encoding=utf8")
 
         FileUtils.mkdir_p("_posts")
 
-        # Reads a MySQL database via Sequel and creates a post file for each
-        # post in wp_posts that has post_status = 'publish'. This restriction is
-        # made because 'draft' posts are not guaranteed to have valid dates.
-        query = "SELECT `title`, `alias`, CONCAT(`introtext`,`fulltext`) as content, `created`, `id` FROM #{table_prefix}content WHERE (state = '0' OR state = '1') AND sectionid = '#{section}'"
+        query = "SELECT `title`, `alias`, CONCAT(`introtext`,`fulltext`) as content, `created`, `id` FROM #{prefix}content WHERE (state = '0' OR state = '1') AND sectionid = #{section}"
 
         db[query].each do |post|
-          # Get required fields and construct Jekyll compatible name.
           title = post[:title]
           date = post[:created]
           content = post[:content]
           id = post[:id]
 
-          # Construct a slug from the title if alias field empty.
-          # Remove illegal filename characters.
           slug = if !post[:alias] || post[:alias].empty?
-                   sluggify(post[:title])
+                   title.downcase.parameterize
                  else
-                   sluggify(post[:alias])
+                   post[:alias].downcase.parameterize
                  end
 
           name = format("%02d-%02d-%02d-%03d-%s.markdown", date.year, date.month, date.day, id, slug)
 
-          # Get the relevant fields as a hash, delete empty fields and convert
-          # to YAML for the header.
           data = {
             "layout"     => "post",
             "title"      => title.to_s,
@@ -74,18 +74,22 @@ module JekyllImport
             "date"       => date,
           }.delete_if { |_k, v| v.nil? || v == "" }.to_yaml
 
-          # Write out the data and content to file
           File.open("_posts/#{name}", "w") do |f|
             f.puts data
             f.puts "---"
             f.puts content
           end
         end
+
+        disconnect_database(db)
       end
 
-      # Borrowed from the Wordpress importer
+      def self.disconnect_database(db)
+        db.disconnect
+      end
+
       def self.sluggify(title)
-        title.downcase.gsub(%r![^0-9A-Za-z]+!, " ").strip.tr(" ", "-")
+        title.downcase.parameterize
       end
     end
   end
